@@ -1,94 +1,276 @@
-# Getting Started with the iTwin Viewer Create React App Template
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+# Introduction
 
-## Environment Variables
+In this tutorial, we will learn how to use the iTwin Viewer with an HTTP endpoint that serves us sensor data. The final result will look like this:
 
-Prior to running the app, you will need to add OIDC client configuration to the variables in the .env file:
+![Final Result](images/final-result.png)
 
-```
-# ---- Authorization Client Settings ----
-IMJS_AUTH_CLIENT_CLIENT_ID=""
-IMJS_AUTH_CLIENT_REDIRECT_URI=""
-IMJS_AUTH_CLIENT_LOGOUT_URI=""
-IMJS_AUTH_CLIENT_SCOPES =""
+# 1. Set up the Project
+We are using the basic iTwin setup for this tutorial. Therefore, we are using the console in Visual Studio Code, browse ("cd ...") to the desired folder and type into the console: 
+
+```bash
+npx create-react-app sensor-itwin-tutorial --template @itwin/web-viewer --scripts-version @bentley/react-scripts
 ```
 
-- You can generate a [test client](https://developer.bentley.com/tutorials/web-application-quick-start/#3-register-an-application) to get started.
+After the installation process is complete, we can either open the folder using Visual Studio Code or type into the console ``` cd sensor-itwin-tutorial``` to change the directory.
 
-- Scopes expected by the viewer are:
+Next, we need to fill out the missing environment variables in our project's ".env" file. For more specifics, please go to [the iTwin Documentation](https://developer.bentley.com/tutorials/web-application-quick-start/).
+As soon as everything is set up, we can start the application and test if everything is running smoothly by entering ```npm start```into the console. The result should look like this (after logging in with your account):
 
-  - **Visualization**: `imodelaccess:read`
-  - **iModels**: `imodels:read`
-  - **Reality Data**: `realitydata:read`
+![iTwin Viewer](images/itwin.png)
 
-- The application will use the path of the redirect URI to handle the redirection, it must simply match what is defined in your client.
+# 2. Setting up a UI Provider
+We can extend iTwin with additional UI by adding custom-made UI Providers.
+First of all, we need to create under the "src" folder a new file named "SensorWidgetProvider.tsx" and add an iTwin UIProvider to:
 
-- When you are ready to build a production application, [register here](https://developer.bentley.com/register/).
+```typescript
+// SensorWidgetProvider.tsx 
 
-You should also add a valid iTwinId and iModelId for your user in the this file:
+import {
+	StagePanelLocation,
+	StagePanelSection,
+	UiItemsProvider,
+	Widget,
+	WidgetState,
+} from "@itwin/appui-react";
+
+export class SensorWidgetUiProvider implements UiItemsProvider {
+	public readonly id: string = "SensorWidgetUiProvider";
+	public provideWidgets(
+	_stageId: string,
+	_stageUsage: string,
+	location: StagePanelLocation,
+	_section?: StagePanelSection
+	): ReadonlyArray<Widget> {
+		const widgets: Widget[] = [];
+		if (location === StagePanelLocation.Right) {
+			widgets.push({
+			id: "SensorWidget",
+			label: "SensorWidget",
+			defaultState: WidgetState.Open,
+			content: <div>Hello World</div>,
+			});
+		}
+		return widgets;
+	}
+}
+```
+
+Into the "content: " property, we are currently adding a placeholder with a simple Div and the text "Hello World". This is the place where we will later add our custom UI.
+
+# 3. Adding the UI Provider to the Viewer
+Next, we must tell iTwin that it should include our newly created UI provider. Therefore, we are switching to the file "App.tsx" and searching for the Viewer component (at the time of writing at line 148 of the current iTwin template). In there, we can find the property "uiProvider={[...]}" that includes a list of currently enabled UIs. We can add our UI by importing it at the top of the file.
+```typescript
+import { SensorWidgetUiProvider } from "./SensorWidgetProvider";
+```
+and adding the provider to the list in the Viewer component
+```typescript
+
+<Viewer
+	iTwinId={iTwinId ?? ""}
+	iModelId={iModelId ?? ""}
+	changeSetId={changesetId}
+	authClient={authClient}
+	viewCreatorOptions={viewCreatorOptions}
+	enablePerformanceMonitors={true} // see description in the README (https://www.npmjs.com/package/@itwin/web-viewer-react)
+	onIModelAppInit={onIModelAppInit}
+	uiProviders={[
+		new SensorWidgetUiProvider(),
+		new ViewerNavigationToolsProvider(),
+		[...]
+		]}
+/>
 
 ```
-# ---- Test ids ----
-IMJS_ITWIN_ID = ""
-IMJS_IMODEL_ID = ""
+
+The Application should now look this:
+
+![iTwin Viewer with custom UI](images/custom.png)
+
+Keep in mind that the location of our UI widget may vary!
+
+# 4. Displaying the selected element
+First, we want to display the name of the element that is currently selected in the viewer. Therefore, we will create a new React Component (SensorWidget)) that we can use in the UI. In there, we are creating two state variables that host the name and the id of the selected element, establish a connection to the iModel in our Viewer and create a useEffect with a listener that is triggered as soon as something is selected in the Viewer. You can find all information regarding the iModelConncetion and the listener in the [iTwin Documentation](https://www.itwinjs.org/reference/core-frontend/imodelconnection/imodelconnection/). The code will look like the following:
+
+```typescript
+export function SensorWidget() {
+	const [elementName, setElementName] = React.useState("");
+	const [elementId, setElementId] = React.useState("");
+	const iModelConnection = useActiveIModelConnection();
+	React.useEffect(() => {
+		iModelConnection?.selectionSet.onChanged.addListener((e) => {
+			e.set.elements.forEach((element) => {
+				iModelConnection?.elements.getProps(element).then((e) => {
+				if (e[0].userLabel && e[0].id) {
+					setElementId(e[0].id);
+					setElementName(e[0].userLabel);
+				}
+				});
+			});
+		});
+		return () => {
+			iModelConnection?.selectionSet.onChanged.removeListener(() => {});
+		};
+		}, []);
+	return (
+	<div>
+		<div>Element Name: {elementName}</div>
+		<div>Element Id: {elementId}</div>
+	</div>
+	);
+}
 ```
 
-- For the IMJS_ITWIN_ID variable, you can use the id of one of your existing iTwins. You can obtain their ids via the [iTwin REST APIs](https://developer.bentley.com/apis/itwins/operations/get-itwin/).
+To see our changes in the application, we still need to replace the content in our Provider:
 
-- For the IMJS_IMODEL_ID variable, use the id of an iModel that belongs to the iTwin that you specified in the IMJS_ITWIN_ID variable. You can obtain iModel ids via the [iModel REST APIs](https://developer.bentley.com/apis/imodels-v2/operations/get-imodel-details/).
+```typescript
+content: <SensorWidget/>
+```
 
-- Alternatively, you can [generate a test iModel](https://developer.bentley.com/tutorials/web-application-quick-start/#4-create-an-imodel) to get started without an existing iModel.
+# 5. Creating a HTTP service for the sensor data
+To hook up our application to a service with sensor data, we first need to create this service. We will not go into the details on how this is specifically done since this was covered in an earlier seminar. But to ensure that we are all working with the same data, we will provide the code for the service here:
 
-- If at any time you wish to change the iModel that you are viewing, you can change the values of the iTwinId or iModelId query parameters in the url (i.e. localhost:3000?iTwinId=myNewITwinId&iModelId=myNewIModelId)
+```python
+from flask import Flask, request, jsonify
+from datetime import datetime, timedelta
+import random
 
-## Available Scripts
+app = Flask(__name__)
 
-In the project directory, you can run:
+# Function to generate dummy timeseries data for a sensor
+def generate_dummy_timeseries(num_entries=10):
+    timeseries_data = []
 
-### `npm start`
+    for i in range(num_entries):
+        timestamp = (datetime.now() - timedelta(days=num_entries - i)).isoformat()
+        value = round(random.uniform(10.0, 30.0), 2)  # Random sensor value between 10.0 and 30.0
+        entry = [timestamp, value]
+        timeseries_data.append(entry)
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+    return timeseries_data
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+# Function to add CORS headers manually
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'  # Allow requests from any origin
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST'
+    return response
 
-### `npm test`
+@app.route('/project/<string:project_id>/sensor/<string:sensor_id>', methods=['GET', 'POST'])
+def sensor(project_id, sensor_id):
+    if request.method == 'GET':
+        # Handle GET request, return dummy sensor data for the specified sensor_id
+        response = jsonify({"data": generate_dummy_timeseries()})
+        return add_cors_headers(response)
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+    elif request.method == 'POST':
+        # Handle POST request, return the payload without storing anything
+        payload = request.json
+        timestamp = datetime.now().isoformat()
+        payload["timestamp"] = timestamp
+        response = jsonify({"data": payload})
+        return add_cors_headers(response)
 
-### `npm run build`
+if __name__ == '__main__':
+    app.run(debug=True)
+```
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+You can set this server up yourself (e.g. by using pythonanywhere) or use the link provided during the seminar. The service is not creating any "real" data but is randomly generating it when it is queried. To GET information for a sensor (even though all routes are creating dummy data here) we need to use the following route (the {$value} parameters are variables and need to be replaced with specific IDs):
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+```
+https://service-url/project/{$}/sensor/{$sensor_id}>
+```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+# 6. Connecting the iTwin with our service
+In the next step, we want to load the sensor data for every element that we are clicking. For now, we are going to ignore that iTwin allows a multi-select, and we will always just use the first element if multiple are selected.
 
-### `npm run eject`
+Before we start coding, we will need to install two additional modules to our project: "react-time-series-charts" and "pondjs". They are responsible for handling time series data (pondjs) and displaying it in our browser (react-time-series-charts).
+We can install these with one console command (make sure you ended the current session of our application with ctrl+c in the console):
+```bash
+npm install react-timeseries-charts pondjs --save
+```
+Next, we need to import the following parts at the top of our file:
+```typescript
+import { TimeSeries } from "pondjs";
+import {
+Charts,
+ChartContainer,
+ChartRow,
+YAxis,
+LineChart,
+}
+//@ts-ignore
+from "react-timeseries-charts";
+```
+We included the ```@ts-ignore```in our import to get rid of some Typescript errors. Now we are adding a new State in our SensorWidget that will store the sensor data that we load from our service:
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+```typescript
+const [timeseries, setTimeseries] = React.useState<TimeSeries | null>(null);
+```
+And we will implement a new useEffect, that listens to changes in our elementId State. This means that this useEffect will always be triggered as soon as the state changes. In this useEffect, we will request the data from our service using fetch and save the requested data into our newly created State. It is good practice to simply copy and paste the URL to our service into the code but to "hide" it in the ".env" file. Therefore we first create ```IMJS_SENSOR_ENDPOINT="enter-service-url-here"``` in the .env file and restart the server (changes in the .env file will only take effect after a restart). The code for the second useEffect looks like this:
+```typescript
+React.useEffect(() => {
+	if (elementId === "") {
+		return;
+	} else {
+		const requestOptions: RequestInit = {
+		method: "GET",
+		redirect: "follow",
+		};
+		if (!process.env.IMJS_SENSOR_ENDPOINT) return;
+		fetch(
+			process.env.IMJS_SENSOR_ENDPOINT +
+			"/project/project_1/sensor/" +
+			elementId,
+			requestOptions
+		)
+		.then((response) => response.json())
+		.then((result) => {
+			const datapoints = result["data"];
+			const tempTimeseries = new TimeSeries({
+				name: "sensor data",
+				columns: ["index", "value"],
+				points: datapoints,
+			});
+			setTimeseries(tempTimeseries);
+		})
+		.catch((error) => console.log("error", error));
+	}
+}, [elementId]);
+```
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+# 7. Plotting the sensor data in react
+The final step is to plot the sensor data in our application. Therefore we are using "react-timeseries-charts". If you want to go into the details of these charts, we suggest you read their [documentation](https://software.es.net/react-timeseries-charts/#/guide/intro). The chart uses the fetched time series data and is built on react components, that are placed inside our return() of of SensorWidget:
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+```typescript
+export function SensorWidget() {
+	return (
+		<div>
+			<div>Element Name: {elementName}</div>
+			<div>Element Id: {elementId}</div>
+			{timeseries === null ? (
+				<></>
+			) : (
+			<ChartContainer
+			timeRange={timeseries.timerange()}
+			format="%b '%y"
+			width={400}>						
+				<ChartRow height="150">
+					<YAxis
+					id="value"
+					label="Value"
+					min={timeseries.min("value", () => {})}
+					max={timeseries.max("value")}
+					width="30"
+					/>
+					<Charts>
+						<LineChart axis="value" series={timeseries} />
+					</Charts>
+				</ChartRow>
+			</ChartContainer>
+			)}
+		</div>
+	);
+}
+```
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
-
-## Notes
-
-If you are not using NPM, remove the `USING_NPM` env var from [.env](./.env)
-
-## Next Steps
-
-- [iTwin Viewer options](https://www.npmjs.com/package/@itwin/web-viewer-react)
-
-- [Extending the iTwin Viewer](https://developer.bentley.com/tutorials/itwin-viewer-hello-world/)
-
-- [Using the iTwin Platform](https://developer.bentley.com/)
-
-- [iTwin Developer Program](https://www.youtube.com/playlist?list=PL6YCKeNfXXd_dXq4u9vtSFfsP3OTVcL8N)

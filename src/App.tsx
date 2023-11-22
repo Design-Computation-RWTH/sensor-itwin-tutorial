@@ -5,6 +5,7 @@
 
 import "./App.scss";
 
+import { SensorWidgetUiProvider } from "./SensorWidgetProvider";
 import type { ScreenViewport } from "@itwin/core-frontend";
 import { FitViewTool, IModelApp, StandardViewId } from "@itwin/core-frontend";
 import { FillCentered } from "@itwin/core-react";
@@ -154,6 +155,7 @@ const App: React.FC = () => {
         enablePerformanceMonitors={true} // see description in the README (https://www.npmjs.com/package/@itwin/web-viewer-react)
         onIModelAppInit={onIModelAppInit}
         uiProviders={[
+          new SensorWidgetUiProvider(),
           new ViewerNavigationToolsProvider(),
           new ViewerContentToolsProvider({
             vertical: {
